@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class BiDAF_model(nn.Module):
-    # nerual netword of BiDAF
+    # nerual network of BiDAF
     def __init__(self, args, encoding_layer, attentionflow_layer, model_layer, output_layer):
         super(BiDAF_model, self).__init__()
         self.encoding_layer = encoding_layer
@@ -23,7 +23,7 @@ class BiDAF_model(nn.Module):
 
         context_encoding, query_encoding = self.encoding_layer(context_info, context_feature, context_mask, query_info, query_mask, context_char, query_char)
         attentionflow = self.attentionflow_layer(context_encoding, context_mask, query_encoding, query_mask)
-        model_info = self.model_layer(attentionflow)
+        model_info = self.model_layer(attentionflow, context_mask)
         start_prob, end_prob = self.output_layer(attentionflow, model_info, context_mask)
 
         return start_prob, end_prob
@@ -101,7 +101,7 @@ class Encoding_Layer(nn.Module):
         context_info = context_info.transpose(0, 1)
         query_info = query_info.transpose(0, 1) 
 
-        context_info = F.dropout(context_info, p = self.args.dropout, training = self.training)
+        # context_info = F.dropout(context_info, p = self.args.dropout, training = self.training)
         query_info = F.dropout(query_info, p = self.args.dropout, training = self.training)
         
         # Encoding the information
@@ -175,9 +175,9 @@ class AttentionFlow_Layer(nn.Module):
     def __init__(self, args):
         super(AttentionFlow_Layer, self).__init__()
         self.args = args
-        self.linear_similarity_matrix = nn.Linear(args.model_dim * 6, 1)
-        self.linear_inner = nn.Linear(args.model_dim * 8, args.model_dim * 8)
-        self.linear_output = nn.Linear(args.model_dim * 8, args.model_dim * 8)
+        self.linear_similarity_matrix = nn.Linear(args.model_dim * 6, 1, bias = False)
+        # self.linear_inner = nn.Linear(args.model_dim * 8, args.model_dim * 8)
+        # self.linear_output = nn.Linear(args.model_dim * 8, args.model_dim * 8)
 
     def forward(self, context_info, context_mask, query_info, query_mask):
         similarity_matrix = self.get_similarity_matrix(context_info, context_mask, query_info, query_mask)
@@ -186,7 +186,7 @@ class AttentionFlow_Layer(nn.Module):
         q2c_attention = self.get_q2c_attention(similarity_matrix, context_info)
 
         result = torch.cat((context_info, c2q_attention, context_info * c2q_attention, context_info * q2c_attention), 2)
-        result = self.linear_output(F.relu(self.linear_inner(result)))
+        # result = self.linear_output(F.relu(self.linear_inner(result)))
         context_mask_output = context_mask.unsqueeze(2).repeat(1, 1, self.args.model_dim * 8)
         result.data.masked_fill_(context_mask_output, 0)
         # B x T x C    C = model_dim * 8
@@ -266,12 +266,15 @@ class Model_layer(nn.Module):
             self.LSTMs.append(nn.LSTM(input_size = args.model_dim * 2, hidden_size = args.model_dim, 
                            num_layers = 1, bidirectional = True))
 
-    def forward(self, query_aware_representation):
+    def forward(self, query_aware_representation, context_mask):
         inp = query_aware_representation.transpose(0, 1)
-        
+        context_mask_model = context_mask.unsqueeze(2).expand(context_mask.size(0), context_mask.size(1), self.args.model_dim * 2).transpose(0, 1)
+
         for i in range(self.args.model_lstm_layers):
             inp = F.dropout(inp, p = self.args.dropout, training = self.training)
             inp, _ = self.LSTMs[i](inp)
+            inp.data.masked_fill_(context_mask_model, 0)
+        
         output = inp.transpose(0, 1)
         return output
 
@@ -282,8 +285,8 @@ class Output_layer(nn.Module):
     def __init__(self, args):
         super(Output_layer, self).__init__()
         self.args = args
-        self.linear_start = nn.Linear(args.model_dim * 10, 1)
-        self.linear_end = nn.Linear(args.model_dim * 10, 1)
+        self.linear_start = nn.Linear(args.model_dim * 10, 1, bias = False)
+        self.linear_end = nn.Linear(args.model_dim * 10, 1, bias = False)
         self.LSTMs = nn.ModuleList()
         for i in range(args.output_lstm_layers):
             self.LSTMs.append(nn.LSTM(input_size = args.model_dim * 2, hidden_size = args.model_dim, 
@@ -299,9 +302,12 @@ class Output_layer(nn.Module):
         # Model_output = F.dropout(Model_output, p = self.args.dropout, training = self.training)
         # Model_output, _ = self.RNN(Model_output)
         Model_output = Model_output.transpose(0, 1)
+        context_mask_model = context_mask.unsqueeze(2).expand(context_mask.size(0), context_mask.size(1), self.args.model_dim * 2).transpose(0, 1)
+
         for i in range(self.args.output_lstm_layers):
             Model_output = F.dropout(Model_output, p = self.args.dropout, training = self.training)
             Model_output, _ = self.LSTMs[i](Model_output)
+            Model_output.data.masked_fill_(context_mask_model, 0)
         Model_output = Model_output.transpose(0, 1)
 
         end_inp = torch.cat((Attention_output, Model_output), 2)

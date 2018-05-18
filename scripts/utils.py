@@ -83,7 +83,7 @@ def index_embedding_words(embedding_file):
             words.add(w)
     return words
 
-def  load_words(args, examples):
+def load_words(args, examples):
     """
     Iterate and index all the words in examples (documents + questions).
     """

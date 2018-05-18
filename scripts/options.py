@@ -39,7 +39,7 @@ def add_trainer_args(parser):
     group.add_argument('--data_workers', type = int, default = 1 )
     group.add_argument('--dev_batch_size', type = int, default = 32 )
     group.add_argument('--valid_metric', type = str, default = 'exact_match' )
-    group.add_argument('--restrict_vocab', action = 'store_true', default = False)
+    group.add_argument('--restrict_vocab', action = 'store_true', default = True)
     group.add_argument('--fixed_embedding', action = 'store_true', default = True)
     group.add_argument('--num_epochs', type = int, default = 25)
     return group    

@@ -20,7 +20,7 @@ def init_from_scratch(args, train_exs, dev_exs):
     # Create a feature dict out of the annotations in the data.
     logger.info('-' * 100)
     logger.info('Generate features')
-    feature_dict = utils.build_feature_dict(args, train_exs + dev_exs)
+    feature_dict = utils.build_feature_dict(args, train_exs)
     logger.info('Number feature = %d' % len(feature_dict))
     logger.info(feature_dict)
 
